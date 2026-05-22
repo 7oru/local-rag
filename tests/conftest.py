@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 import psycopg
 import pytest
 from dotenv import dotenv_values
+from fastapi.testclient import TestClient
 
 from app.config import DEFAULTS, find_repo_root, load_settings
 from app.db import init_db
@@ -142,3 +143,10 @@ def run_cli(cli_env: dict[str, str]) -> Callable[..., subprocess.CompletedProces
         )
 
     return _run_cli
+
+
+@pytest.fixture
+def api_client(test_env: dict[str, str], clean_test_db: None) -> TestClient:
+    from app.main import app
+
+    return TestClient(app)
