@@ -6,6 +6,7 @@ import typer
 from app.config import ConfigError, load_settings
 from app.db import DatabaseError, init_db
 from app.embeddings import EmbeddingError, warmup_embeddings
+from app.ingest import IngestError, ingest_vault
 
 app = typer.Typer(
     add_completion=False,
@@ -67,6 +68,29 @@ def embeddings_warmup_command(ctx: typer.Context) -> None:
         result = warmup_embeddings(settings)
     except (ConfigError, EmbeddingError) as exc:
         typer.echo(f"embedding error: {exc}", err=True)
+        raise typer.Exit(1) from exc
+
+    for line in result.summary_lines():
+        typer.echo(line)
+
+
+@app.command("ingest")
+def ingest_command(
+    ctx: typer.Context,
+    vault_path: Optional[Path] = typer.Argument(
+        None,
+        help="Markdown / Obsidian vault path. Defaults to VAULT_PATH.",
+        exists=False,
+        file_okay=False,
+        resolve_path=False,
+    ),
+) -> None:
+    """Ingest a Markdown / Obsidian vault into Postgres."""
+    try:
+        settings = load_settings(ctx.obj.get("env_file") if ctx.obj else None)
+        result = ingest_vault(vault_path, settings=settings)
+    except (ConfigError, EmbeddingError, IngestError) as exc:
+        typer.echo(f"ingest error: {exc}", err=True)
         raise typer.Exit(1) from exc
 
     for line in result.summary_lines():
