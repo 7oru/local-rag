@@ -2,13 +2,15 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class HealthChecks(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     app: Literal["ok"]
     database: Literal["ok"]
-    schema: Literal["ok"]
+    schema_: Literal["ok"] = Field(alias="schema")
     pgvector: Literal["ok"]
     embedding_config: Literal["ok"]
     retrieval_ready: Literal["ok", "not_ready"]

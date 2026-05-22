@@ -5,6 +5,7 @@ from typing import Any
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.config import ConfigError, load_settings
 from app.db import inspect_database
@@ -35,6 +36,18 @@ async def validation_exception_handler(
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
+    return _http_error_response(exc)
+
+
+@app.exception_handler(StarletteHTTPException)
+async def starlette_http_exception_handler(
+    request: Request,
+    exc: StarletteHTTPException,
+) -> JSONResponse:
+    return _http_error_response(exc)
+
+
+def _http_error_response(exc: HTTPException | StarletteHTTPException) -> JSONResponse:
     detail = exc.detail if isinstance(exc.detail, dict) else {}
     return api_error(
         status_code=exc.status_code,
