@@ -110,7 +110,7 @@ RAG_CONTEXT_TOKEN_BUDGET=6000
 RAG_FALLBACK_ENABLED=false
 ```
 
-配置加载必须使用 `python-dotenv`。本地 venv 进程启动时加载 repo 根目录 `.env`，并使用 `override=False`，因此优先级固定为：**OS environment / shell export > `.env` > 代码内默认值**。`.env` 路径不能依赖当前工作目录：CLI 必须从当前目录向上查找同时包含 `pyproject.toml` 和 `.env.sample` 的 repo root，或通过 `rag --env-file PATH` 显式指定。空字符串视为未设置；`RAG_MIN_SIMILARITY=` 为空表示使用 provider 动态默认值，`fake` 初始目标解析为 `0.90` 且必须通过 fake calibration 测试固化，`local-qwen3` 解析为 `0.35`。如果用户显式在 shell 或 `.env` 中设置 `RAG_MIN_SIMILARITY`，显式值覆盖 provider 默认值。配置摘要必须打印 resolved threshold，但不能打印 API key，只能打印 API key 是否存在。
+配置加载必须使用 `python-dotenv`。本地 venv 进程启动时加载 repo 根目录 `.env`，并使用 `override=False`，因此优先级固定为：**OS environment / shell export > `.env` > 代码内默认值**。`.env` 路径不能依赖当前工作目录：CLI 必须从当前目录向上查找同时包含 `pyproject.toml` 和 `.env.sample` 的 repo root，或通过 `rag --env-file PATH` 显式指定。空字符串视为未设置；`RAG_MIN_SIMILARITY=` 为空表示使用 provider 动态默认值，`fake` 通过 fake calibration 测试固化为 `0.20`，`local-qwen3` 解析为 `0.35`。如果用户显式在 shell 或 `.env` 中设置 `RAG_MIN_SIMILARITY`，显式值覆盖 provider 默认值。配置摘要必须打印 resolved threshold，但不能打印 API key，只能打印 API key 是否存在。
 
 做真实联网测试时修改 `.env` 中的通用 `LLM_*` 变量，例如：
 
@@ -246,7 +246,7 @@ pgvector 不生成 embedding，只负责存储和检索向量。MVP 需要一个
 - hashing：使用 SHA-256，hash input 格式为 `fake-lexical-v1:{feature}`，取前 8 bytes big-endian unsigned int 后对 `1024` 取模；hash seed/version 不能随运行环境变化。
 - accumulation：每个 token 按权重累加到对应 bucket；同一 token 可重复计数，但单字段内单个 token 贡献上限为 `4 * weight`，避免长文重复词压倒标题和路径。
 - normalization：最终向量做 L2 normalization；空输入返回全零向量并由调用方视为不可检索输入。
-- 验收校准：`0.90` 是 fake provider 的初始目标阈值，必须在 sample vault/questions 上实际计算分布后固化；如果分布没有稳定 margin，应先调整 sample question、metadata 权重或 fake provider resolved default，并记录在测试里，不能用随机 seed 修正。
+- 验收校准：fake provider default 通过 sample vault/questions 的实际分布固化为 `0.20`；如果后续分布没有稳定 margin，应先调整 sample question、metadata 权重或 fake provider resolved default，并记录在测试里，不能用随机 seed 修正。
 
 `EMBEDDING_MODEL` 用于配置摘要和 embedding metadata，但 MVP 中它必须与 provider 固定模型一致；如果 `EMBEDDING_PROVIDER=local-qwen3` 且 `EMBEDDING_MODEL` 不是 `Qwen/Qwen3-Embedding-0.6B`，或 `EMBEDDING_PROVIDER=fake` 且 `EMBEDDING_MODEL` 不是 `fake-lexical-v1`，配置校验必须失败。
 
@@ -439,7 +439,7 @@ API 字段关系：
 初始阈值策略：
 
 - `RAG_MIN_SIMILARITY` 未设置或为空时，配置层按 provider 给出动态默认值。
-- `fake` provider resolved default：fake calibration 固化后的值，初始目标为 `0.90`，用于 deterministic smoke test。
+- `fake` provider resolved default：fake calibration 固化后的值 `0.20`，用于 deterministic smoke test。
 - `local-qwen3` resolved default：`0.35`，作为初始值。
 - 显式设置 `RAG_MIN_SIMILARITY` 时，无论来自 OS env 还是 `.env`，都覆盖 provider 动态默认值。
 - `local-qwen3` threshold 必须用 sample questions 校准，确保已知问题进入 `rag`，无关问题进入 `no_answer`。

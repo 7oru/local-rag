@@ -94,7 +94,7 @@ MVP 中 agent-facing API 只包含 `/search` 和 `/ask`；ingest 是 operator / 
 - `pyproject.toml` console script + `app/cli.py` CLI scaffold，逐步接入 `rag db init`、`rag embeddings warmup`、`rag ingest`、`rag search`、`rag ask`。
 - citations。
 - confidence、`no_answer` 和 `fallback` mode；MVP 不实现 `mixed` mode。
-- 初始 `RAG_MIN_SIMILARITY`：fake provider 目标值 `0.90` 必须先用 sample vault/questions 做实际分布校准后固化；`local-qwen3` 初始值 `0.35` 也用 sample questions 校准。
+- `RAG_MIN_SIMILARITY`：fake provider default 已用 sample vault/questions 校准并固化为 `0.20`；`local-qwen3` 初始值 `0.35` 也用 sample questions 校准。
 - `RAG_FALLBACK_ENABLED=false` 作为全局 fallback kill switch；request-level `fallback=true` 只有在全局开关打开时生效。
 - `RAG_CONTEXT_TOKEN_BUDGET=6000` 作为 MVP context packing 初始默认。
 - sample enterprise vault。

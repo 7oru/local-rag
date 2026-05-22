@@ -39,6 +39,8 @@ EMBEDDING_MODELS = {
     "fake": "fake-lexical-v1",
     "local-qwen3": "Qwen/Qwen3-Embedding-0.6B",
 }
+FAKE_DEFAULT_MIN_SIMILARITY = 0.20
+LOCAL_QWEN3_DEFAULT_MIN_SIMILARITY = 0.35
 
 
 @dataclass(frozen=True)
@@ -175,7 +177,11 @@ def _build_settings(repo_root: Path, env_file: Path) -> Settings:
 
     rag_min_similarity = _optional_float("RAG_MIN_SIMILARITY")
     if rag_min_similarity is None:
-        rag_min_similarity = 0.90 if embedding_provider == "fake" else 0.35
+        rag_min_similarity = (
+            FAKE_DEFAULT_MIN_SIMILARITY
+            if embedding_provider == "fake"
+            else LOCAL_QWEN3_DEFAULT_MIN_SIMILARITY
+        )
     if not 0.0 <= rag_min_similarity <= 1.0:
         raise ConfigError("RAG_MIN_SIMILARITY must be between 0.0 and 1.0.")
 

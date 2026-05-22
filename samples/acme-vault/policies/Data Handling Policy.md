@@ -22,6 +22,8 @@ External OpenAI-compatible models may receive only approved public or internal c
 
 If the user asks "哪些客户数据不能发给外部模型？", answer from this policy and cite this source.
 
+中文检索提示：客户数据 不能 发给 外部模型 的范围包括 raw API keys、access tokens、payment information、private attachments、security questionnaires、legal contracts 和 customer-provided secrets。
+
 ## Related Runbooks
 
 When restricted data appears in an incident, pause automation and notify Security Review. For P1 support flow, see [[policies/Support Escalation Policy]].

@@ -238,7 +238,7 @@ env 文件边界：
 - `RAG_TOP_K` 默认 `5`，允许范围 `1..20`。
 - 本地 venv 默认 `EMBEDDING_CACHE_DIR=.cache/embeddings`，也可显式设为 `$HOME/.cache/local-rag/embeddings`。
 - `.env.sample` 中 `RAG_MIN_SIMILARITY=` 默认留空，表示使用 provider 动态默认值。
-- `RAG_MIN_SIMILARITY` 未设置或为空时，`fake` provider resolved default 初始目标为 `0.90`，并必须由 Task 8.5 的 fake calibration 固化；如果校准后调整阈值或 fake scoring 规则，必须同步更新本文档、`.env.sample` 的说明和测试断言。
+- `RAG_MIN_SIMILARITY` 未设置或为空时，`fake` provider resolved default 由 Task 8.5 的 fake calibration 固化为 `0.20`；如果校准后调整阈值或 fake scoring 规则，必须同步更新本文档、`.env.sample` 的说明和测试断言。
 - `RAG_MIN_SIMILARITY` 未设置或为空时，`local-qwen3` resolved default 为 `0.35`，作为初始值。
 - 显式设置 `RAG_MIN_SIMILARITY` 时，无论来自 OS env 还是 `.env`，都覆盖 provider 动态默认值。
 - `RAG_CONTEXT_TOKEN_BUDGET` 默认 `6000`。
@@ -257,7 +257,7 @@ python -m app.config
 ```text
 llm_provider=fake
 llm_api_key_present=false
-rag_min_similarity=0.90
+rag_min_similarity=0.20
 ```
 
 如果 Task 8.5 校准后调整 fake provider default，上面的期望摘要必须同步更新。
@@ -788,7 +788,7 @@ fake provider 边界：
 - hashing：使用 SHA-256，hash input 格式为 `fake-lexical-v1:{feature}`，取前 8 bytes big-endian unsigned int 后对 `1024` 取模；hash seed/version 不能随运行环境变化。
 - accumulation：每个 token 按权重累加到对应 bucket；同一 token 可重复计数，但单字段内单个 token 贡献上限为 `4 * weight`。
 - normalization：最终向量做 L2 normalization；空输入返回全零向量并由调用方视为不可检索输入。
-- 验收校准：`0.90` 是 fake provider 的初始目标阈值，必须通过 Task 8.5 在 sample vault/questions 上实际计算分布后固化；如果分布没有稳定 margin，应先调整 sample question、metadata 权重或 fake provider resolved default，并把最终选择记录在测试里，不能用随机 seed 修正。
+- 验收校准：fake provider default 必须通过 Task 8.5 在 sample vault/questions 上实际计算分布后固化；当前固化值为 `0.20`。如果分布没有稳定 margin，应先调整 sample question、metadata 权重或 fake provider resolved default，并把最终选择记录在测试里，不能用随机 seed 修正。
 
 `local-qwen3` 运行边界：
 
@@ -838,7 +838,7 @@ pytest tests/test_embeddings.py
 
 ## Task 8.5: Fake Embedding Calibration
 
-目标：在 ingest/search/ask 的 DB/API 测试开始前，用真实 sample vault 和 sample questions 校准 fake lexical scoring 与阈值，避免 `0.90` 只是拍脑袋常量。
+目标：在 ingest/search/ask 的 DB/API 测试开始前，用真实 sample vault 和 sample questions 校准 fake lexical scoring 与阈值，避免 provider default 只是拍脑袋常量。
 
 产物：
 
@@ -853,7 +853,7 @@ pytest tests/test_embeddings.py
 - top source 必须命中 `expected_sources`，且 top clamped score 必须大于等于 fake provider resolved threshold。
 - 对每个 `expected_mode=no_answer` 的 sample question，`expected_sources` 必须为空，且 top clamped score 必须低于 fake provider resolved threshold。
 - calibration 必须记录或断言分布摘要：`min_expected_top_score`、`max_unrelated_top_score`、`margin = min_expected_top_score - max_unrelated_top_score`。
-- 如果初始 `0.90` 没有稳定 margin，必须在 Task 8.5 内先调整 sample question、fake metadata weighting 或 fake provider resolved default，并同步更新 Task 1 配置说明、本文档和相关测试。
+- 如果当前 provider default 没有稳定 margin，必须在 Task 8.5 内先调整 sample question、fake metadata weighting 或 fake provider resolved default，并同步更新 Task 1 配置说明、本文档和相关测试。
 - hash seed、feature order 和 tie-breaker 必须 deterministic；不得通过随机 seed 或浮动 tolerance 掩盖不稳定。
 
 验证：
@@ -1066,7 +1066,7 @@ CLI 和 HTTP `POST /search` 都应命中 support escalation 相关文档。
 - top clamped score 高于或等于阈值时必须被判为高置信。
 - 阈值来自配置。
 - `RAG_MIN_SIMILARITY` 未设置或为空时，配置层按 provider 给出动态默认值。
-- `fake` provider resolved default：Task 8.5 校准后固化的值，初始目标为 `0.90`。
+- `fake` provider resolved default：Task 8.5 校准后固化的值 `0.20`。
 - `local-qwen3` resolved default：`0.35`。
 - 显式设置 `RAG_MIN_SIMILARITY` 时覆盖 provider 动态默认值。
 - `local-qwen3` resolved default `0.35` 是初始值，必须通过下方 manual local-qwen3 gate 用 sample questions 校准：已知问题进入 `rag`，无关问题进入 `no_answer`。

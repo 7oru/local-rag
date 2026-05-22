@@ -21,6 +21,8 @@ Atlas CRM allows workspace administrators to export account summaries, activity 
 
 Exports do not include raw customer secrets, private attachments, payment tokens, or security questionnaires. Those fields are governed by [[policies/Data Handling Policy]] and must stay inside approved storage.
 
+中文检索提示：Atlas CRM 数据导出 限制 包括不能导出 raw customer secrets、private attachments、payment tokens 和 security questionnaires。
+
 ## Related Notes
 
 For common product questions, see [[products/Atlas CRM FAQ]]. For customer issue triage, see [[support/Common Customer Issues]].

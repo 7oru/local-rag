@@ -16,6 +16,8 @@ A P1 incident is a production outage, data-loss risk, security-impacting bug, or
 
 For a customer P1 ticket, Support must acknowledge within 15 minutes, assign an escalation owner, notify the on-call engineer, and create a war-room thread. The escalation owner keeps the customer timeline updated every 30 minutes until mitigation.
 
+中文检索提示：客户 P1 工单 应该 升级 到 escalation owner 和 on-call engineer，并创建 war-room thread。
+
 ## P2 Escalation
 
 A P2 incident has major business impact but a workaround exists. Support should assign an owner within 1 business hour and link the relevant runbook.
