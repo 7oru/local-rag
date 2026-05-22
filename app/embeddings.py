@@ -35,6 +35,7 @@ FIELD_WEIGHTS = {
     "tags": 1.25,
     "wikilinks": 1.25,
 }
+_CLIENT_CACHE: dict[tuple[str, str, str, str], EmbeddingClient] = {}
 
 
 class EmbeddingError(RuntimeError):
@@ -224,10 +225,18 @@ def create_embedding_client(settings: Settings | None = None) -> EmbeddingClient
     if resolved.embedding_provider == FAKE_PROVIDER:
         return FakeEmbeddingClient()
     if resolved.embedding_provider == LOCAL_QWEN3_PROVIDER:
-        return LocalQwen3EmbeddingClient(
-            cache_dir=resolved.embedding_cache_dir,
-            device=resolved.embedding_device,
+        cache_key = (
+            resolved.embedding_provider,
+            resolved.embedding_model,
+            str(Path(resolved.embedding_cache_dir).expanduser()),
+            resolved.embedding_device,
         )
+        if cache_key not in _CLIENT_CACHE:
+            _CLIENT_CACHE[cache_key] = LocalQwen3EmbeddingClient(
+                cache_dir=resolved.embedding_cache_dir,
+                device=resolved.embedding_device,
+            )
+        return _CLIENT_CACHE[cache_key]
     raise EmbeddingError(f"Unsupported embedding provider: {resolved.embedding_provider}")
 
 

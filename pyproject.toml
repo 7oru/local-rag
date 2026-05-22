@@ -40,5 +40,5 @@ include = ["app*"]
 
 [tool.pytest.ini_options]
 markers = [
-  "local_qwen3: manual local-qwen3 embedding quality gate; requires cached model and local Postgres data",
+  "local_qwen3: manual local Qwen3 embedding source-hit and threshold gate",
 ]

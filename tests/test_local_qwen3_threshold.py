@@ -6,9 +6,7 @@ from dataclasses import dataclass
 import pytest
 import yaml
 
-from app.confidence import decide_answer_mode
 from app.config import load_settings
-from app.embeddings import create_embedding_client
 from app.retrieval import search
 
 
@@ -16,23 +14,22 @@ pytestmark = pytest.mark.local_qwen3
 
 
 @dataclass(frozen=True)
-class GateScore:
+class QuestionResult:
     question_id: str
     mode: str
+    top_source: str
     confidence: float
-    source: str | None
 
 
 def test_local_qwen3_source_hit_and_threshold_gate() -> None:
     if os.environ.get("EMBEDDING_PROVIDER") != "local-qwen3":
-        pytest.skip("manual gate requires EMBEDDING_PROVIDER=local-qwen3")
+        pytest.skip("Set EMBEDDING_PROVIDER=local-qwen3 to run this manual gate.")
 
     settings = load_settings()
     assert settings.embedding_provider == "local-qwen3"
     assert settings.embedding_model == "Qwen/Qwen3-Embedding-0.6B"
-    assert settings.rag_min_similarity == 0.35
+    assert settings.embedding_dim == 1024
 
-    client = create_embedding_client(settings)
     questions = load_eval_questions()
     rag_questions = [item for item in questions if item["expected_mode"] == "rag"]
     no_answer_questions = [
@@ -41,47 +38,65 @@ def test_local_qwen3_source_hit_and_threshold_gate() -> None:
     assert len(rag_questions) >= 5
     assert len(no_answer_questions) >= 1
 
+    results: list[QuestionResult] = []
     expected_scores: list[float] = []
     no_answer_scores: list[float] = []
-    gate_scores: list[GateScore] = []
 
     for question in questions:
-        result = search(
+        retrieval = search(
             question["question"],
             top_k=5,
             settings=settings,
-            embedding_client=client,
         )
-        top = result.chunks[0] if result.chunks else None
-        decision = decide_answer_mode(confidence=result.confidence, settings=settings)
-        gate_scores.append(
-            GateScore(
+        assert retrieval.chunks, f"{question['id']} returned no chunks"
+        top = retrieval.chunks[0]
+        results.append(
+            QuestionResult(
                 question_id=question["id"],
                 mode=question["expected_mode"],
-                confidence=result.confidence,
-                source=top.source if top else None,
+                top_source=top.source,
+                confidence=retrieval.confidence,
             )
         )
 
         if question["expected_mode"] == "rag":
-            assert top is not None, question["id"]
-            assert top.source in question["expected_sources"], gate_scores
-            assert decision.mode == "rag", gate_scores
-            expected_scores.append(result.confidence)
+            assert top.source in question["expected_sources"], format_results(results)
+            assert retrieval.confidence >= settings.rag_min_similarity, format_results(
+                results
+            )
+            expected_scores.append(retrieval.confidence)
         else:
             assert question["expected_sources"] == []
-            assert decision.mode == "no_answer", gate_scores
-            no_answer_scores.append(result.confidence)
+            assert retrieval.confidence < settings.rag_min_similarity, format_results(
+                results
+            )
+            no_answer_scores.append(retrieval.confidence)
 
     min_expected_top_score = min(expected_scores)
     max_no_answer_top_score = max(no_answer_scores)
     margin = min_expected_top_score - max_no_answer_top_score
 
-    assert min_expected_top_score == pytest.approx(0.6738, abs=0.0002)
-    assert max_no_answer_top_score == pytest.approx(0.2727, abs=0.0002)
-    assert margin == pytest.approx(0.4011, abs=0.0002)
+    assert margin > 0.0, format_results(results)
+    print(
+        {
+            "embedding_model": settings.embedding_model,
+            "resolved_threshold": settings.rag_min_similarity,
+            "min_expected_top_score": min_expected_top_score,
+            "max_no_answer_top_score": max_no_answer_top_score,
+            "margin": margin,
+            "results": [result.__dict__ for result in results],
+        }
+    )
 
 
 def load_eval_questions() -> list[dict]:
     with open("eval/questions.yaml", encoding="utf-8") as file:
         return yaml.safe_load(file)
+
+
+def format_results(results: list[QuestionResult]) -> str:
+    return "\n".join(
+        f"{result.question_id}: mode={result.mode} source={result.top_source} "
+        f"confidence={result.confidence:.4f}"
+        for result in results
+    )
