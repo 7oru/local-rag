@@ -5,6 +5,7 @@ import typer
 
 from app.config import ConfigError, load_settings
 from app.db import DatabaseError, init_db
+from app.embeddings import EmbeddingError, warmup_embeddings
 
 app = typer.Typer(
     add_completion=False,
@@ -12,7 +13,9 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 db_app = typer.Typer(help="Database management commands.", no_args_is_help=True)
+embeddings_app = typer.Typer(help="Embedding provider commands.", no_args_is_help=True)
 app.add_typer(db_app, name="db")
+app.add_typer(embeddings_app, name="embeddings")
 
 
 @app.callback()
@@ -54,6 +57,20 @@ def db_init_command(ctx: typer.Context) -> None:
         raise typer.Exit(1) from exc
 
     typer.echo("database schema initialized")
+
+
+@embeddings_app.command("warmup")
+def embeddings_warmup_command(ctx: typer.Context) -> None:
+    """Warm up the configured embedding provider."""
+    try:
+        settings = load_settings(ctx.obj.get("env_file") if ctx.obj else None)
+        result = warmup_embeddings(settings)
+    except (ConfigError, EmbeddingError) as exc:
+        typer.echo(f"embedding error: {exc}", err=True)
+        raise typer.Exit(1) from exc
+
+    for line in result.summary_lines():
+        typer.echo(line)
 
 
 def main() -> None:

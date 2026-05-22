@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import argparse
 import hashlib
 import math
 import re
+import sys
 import unicodedata
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -48,6 +50,26 @@ class EmbeddingInput:
     wikilinks: Sequence[str] = field(default_factory=tuple)
 
 
+@dataclass(frozen=True)
+class WarmupResult:
+    provider: str
+    model: str
+    dim: int
+    cache_dir: str
+    device: str
+    cached: bool
+
+    def summary_lines(self) -> list[str]:
+        return [
+            f"provider={self.provider}",
+            f"model={self.model}",
+            f"dim={self.dim}",
+            f"cache_dir={self.cache_dir}",
+            f"device={self.device}",
+            f"cached={'true' if self.cached else 'false'}",
+        ]
+
+
 class EmbeddingClient(Protocol):
     provider: str
     model: str
@@ -71,6 +93,19 @@ class FakeEmbeddingClient:
     def embed_query(self, query: str) -> list[float]:
         return fake_lexical_embedding(EmbeddingInput(content=query))
 
+    def warmup(self, settings: Settings) -> WarmupResult:
+        vector = self.embed_query("warmup")
+        if len(vector) != self.dim:
+            raise EmbeddingError(f"fake warmup returned {len(vector)} dimensions")
+        return WarmupResult(
+            provider=self.provider,
+            model=self.model,
+            dim=self.dim,
+            cache_dir=settings.embedding_cache_dir,
+            device=settings.embedding_device,
+            cached=True,
+        )
+
 
 class LocalQwen3EmbeddingClient:
     provider = LOCAL_QWEN3_PROVIDER
@@ -93,27 +128,29 @@ class LocalQwen3EmbeddingClient:
         if not texts:
             return []
 
-        model = self._load_model()
-        try:
-            if is_query:
-                vectors = model.encode(
-                    list(texts),
-                    prompt_name="query",
-                    normalize_embeddings=True,
-                )
-            else:
-                vectors = model.encode(list(texts), normalize_embeddings=True)
-        except TypeError:
-            if is_query:
-                texts = [QWEN_QUERY_INSTRUCTION.format(query=text) for text in texts]
-            vectors = model.encode(list(texts), normalize_embeddings=True)
+        model = self._load_model(allow_download=False)
+        return self._encode_with_model(model, texts, is_query=is_query)
 
-        return [_to_float_list(vector) for vector in vectors]
+    def warmup(self) -> WarmupResult:
+        model = self._load_model(allow_download=True)
+        vector = self._encode_with_model(model, ["warmup"], is_query=True)[0]
+        if len(vector) != self.dim:
+            raise EmbeddingError(
+                f"local-qwen3 warmup returned {len(vector)} dimensions, expected {self.dim}"
+            )
+        return WarmupResult(
+            provider=self.provider,
+            model=self.model,
+            dim=self.dim,
+            cache_dir=str(self.cache_dir),
+            device=self.device,
+            cached=True,
+        )
 
-    def _load_model(self):
+    def _load_model(self, *, allow_download: bool):
         if self._model is not None:
             return self._model
-        if not self._cache_looks_ready():
+        if not allow_download and not self._cache_looks_ready():
             raise EmbeddingError(
                 "local-qwen3 model cache is missing. "
                 f"provider={self.provider} model={self.model} "
@@ -145,6 +182,29 @@ class LocalQwen3EmbeddingClient:
             ) from exc
         return self._model
 
+    def _encode_with_model(
+        self,
+        model,
+        texts: Sequence[str],
+        *,
+        is_query: bool,
+    ) -> list[list[float]]:
+        try:
+            if is_query:
+                vectors = model.encode(
+                    list(texts),
+                    prompt_name="query",
+                    normalize_embeddings=True,
+                )
+            else:
+                vectors = model.encode(list(texts), normalize_embeddings=True)
+        except TypeError:
+            if is_query:
+                texts = [QWEN_QUERY_INSTRUCTION.format(query=text) for text in texts]
+            vectors = model.encode(list(texts), normalize_embeddings=True)
+
+        return [_to_float_list(vector) for vector in vectors]
+
     def _cache_looks_ready(self) -> bool:
         if not self.cache_dir.exists():
             return False
@@ -161,6 +221,16 @@ def create_embedding_client(settings: Settings | None = None) -> EmbeddingClient
             device=resolved.embedding_device,
         )
     raise EmbeddingError(f"Unsupported embedding provider: {resolved.embedding_provider}")
+
+
+def warmup_embeddings(settings: Settings | None = None) -> WarmupResult:
+    resolved = settings or load_settings()
+    client = create_embedding_client(resolved)
+    if isinstance(client, FakeEmbeddingClient):
+        return client.warmup(resolved)
+    if isinstance(client, LocalQwen3EmbeddingClient):
+        return client.warmup()
+    raise EmbeddingError(f"Unsupported embedding client: {type(client).__name__}")
 
 
 def fake_lexical_embedding(item: EmbeddingInput, *, dim: int = EMBEDDING_DIMENSION) -> list[float]:
@@ -265,3 +335,34 @@ def _to_float_list(vector) -> list[float]:
     if hasattr(vector, "tolist"):
         vector = vector.tolist()
     return [float(value) for value in vector]
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="local-rag embedding utilities")
+    action = parser.add_mutually_exclusive_group(required=True)
+    action.add_argument("--warmup", action="store_true", help="Warm up configured provider")
+    action.add_argument("--embed", metavar="TEXT", help="Embed a query without downloading models")
+    args = parser.parse_args(argv)
+
+    try:
+        settings = load_settings()
+        if args.warmup:
+            result = warmup_embeddings(settings)
+            print("\n".join(result.summary_lines()))
+            return 0
+
+        client = create_embedding_client(settings)
+        vector = client.embed_query(args.embed)
+        print(f"provider={client.provider}")
+        print(f"model={client.model}")
+        print(f"dim={client.dim}")
+        print(f"vector_dim={len(vector)}")
+        print(f"l2_norm={math.sqrt(sum(value * value for value in vector)):.6f}")
+        return 0
+    except Exception as exc:
+        print(f"embedding error: {exc}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
