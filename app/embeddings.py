@@ -150,17 +150,10 @@ class LocalQwen3EmbeddingClient:
     def _load_model(self, *, allow_download: bool):
         if self._model is not None:
             return self._model
-        if not allow_download and not self._cache_looks_ready():
-            raise EmbeddingError(
-                "local-qwen3 model cache is missing. "
-                f"provider={self.provider} model={self.model} "
-                f"cache_dir={self.cache_dir} device={self.device}. "
-                "The Qwen3-Embedding-0.6B cache needs roughly 1.5GB of disk. "
-                "Run `rag embeddings warmup` before embedding with local-qwen3."
-            )
 
         try:
             from sentence_transformers import SentenceTransformer
+            from huggingface_hub import snapshot_download
         except ImportError as exc:
             raise EmbeddingError(
                 "local-qwen3 requires optional dependencies. "
@@ -168,9 +161,30 @@ class LocalQwen3EmbeddingClient:
             ) from exc
 
         try:
+            snapshot_path = snapshot_download(
+                repo_id=self.model,
+                cache_dir=str(self.cache_dir),
+                local_files_only=not allow_download,
+            )
+        except Exception as exc:
+            if not allow_download:
+                raise EmbeddingError(
+                    "local-qwen3 model cache is missing or incomplete. "
+                    f"provider={self.provider} model={self.model} "
+                    f"cache_dir={self.cache_dir} device={self.device}. "
+                    "The Qwen3-Embedding-0.6B cache needs roughly 1.5GB of disk. "
+                    "Run `rag embeddings warmup` before embedding with local-qwen3."
+                ) from exc
+            raise EmbeddingError(
+                "Could not download local-qwen3 embedding model. "
+                f"provider={self.provider} model={self.model} "
+                f"cache_dir={self.cache_dir} device={self.device}. "
+                "Check network access and retry `rag embeddings warmup`."
+            ) from exc
+
+        try:
             self._model = SentenceTransformer(
-                self.model,
-                cache_folder=str(self.cache_dir),
+                snapshot_path,
                 device=self.device,
             )
         except Exception as exc:
@@ -204,12 +218,6 @@ class LocalQwen3EmbeddingClient:
             vectors = model.encode(list(texts), normalize_embeddings=True)
 
         return [_to_float_list(vector) for vector in vectors]
-
-    def _cache_looks_ready(self) -> bool:
-        if not self.cache_dir.exists():
-            return False
-        return any(self.cache_dir.rglob("*Qwen3*")) or any(self.cache_dir.rglob("*qwen3*"))
-
 
 def create_embedding_client(settings: Settings | None = None) -> EmbeddingClient:
     resolved = settings or load_settings()

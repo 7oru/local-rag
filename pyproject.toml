@@ -37,3 +37,8 @@ rag = "app.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["app*"]
+
+[tool.pytest.ini_options]
+markers = [
+  "local_qwen3: manual local-qwen3 embedding quality gate; requires cached model and local Postgres data",
+]
