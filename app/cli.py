@@ -3,6 +3,8 @@ from typing import Optional
 
 import typer
 
+from app.config import ConfigError, load_settings
+
 app = typer.Typer(
     add_completion=False,
     help="Local-first RAG reference CLI.",
@@ -23,6 +25,18 @@ def callback(
     ),
 ) -> None:
     ctx.obj = {"env_file": env_file}
+
+
+@app.command("config")
+def config_command(ctx: typer.Context) -> None:
+    """Print a redacted configuration summary."""
+    try:
+        settings = load_settings(ctx.obj.get("env_file") if ctx.obj else None)
+    except ConfigError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+    for line in settings.summary_lines():
+        typer.echo(line)
 
 
 def main() -> None:
