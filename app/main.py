@@ -9,12 +9,15 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.config import ConfigError, load_settings
 from app.db import inspect_database
+from app.retrieval import RetrievalError, RetrievalNotReady, search, to_search_result
 from app.schemas import (
     ErrorBody,
     ErrorResponse,
     HealthChecks,
     HealthDetails,
     HealthResponse,
+    SearchRequest,
+    SearchResponse,
 )
 
 
@@ -108,6 +111,33 @@ def health() -> HealthResponse | JSONResponse:
             chunks=status.chunks,
             embeddings_current_config=status.embeddings_current_config,
         ),
+    )
+
+
+@app.post("/search", response_model=SearchResponse)
+def search_route(request: SearchRequest) -> SearchResponse | JSONResponse:
+    try:
+        result = search(request.query, top_k=request.top_k)
+    except RetrievalNotReady as exc:
+        return api_error(
+            status_code=503,
+            code="retrieval_not_ready",
+            message="Retrieval is not ready for the current embedding config.",
+            details={"reason": str(exc)},
+        )
+    except RetrievalError as exc:
+        return api_error(
+            status_code=503,
+            code="retrieval_error",
+            message="Retrieval failed.",
+            details={"reason": str(exc)},
+        )
+
+    return SearchResponse(
+        query=result.query,
+        top_k=result.top_k,
+        results=[to_search_result(chunk) for chunk in result.chunks],
+        confidence=result.confidence,
     )
 
 

@@ -7,6 +7,7 @@ from app.config import ConfigError, load_settings
 from app.db import DatabaseError, init_db
 from app.embeddings import EmbeddingError, warmup_embeddings
 from app.ingest import IngestError, ingest_vault
+from app.retrieval import RetrievalError, RetrievalNotReady, search, to_search_result
 
 app = typer.Typer(
     add_completion=False,
@@ -95,6 +96,35 @@ def ingest_command(
 
     for line in result.summary_lines():
         typer.echo(line)
+
+
+@app.command("search")
+def search_command(
+    ctx: typer.Context,
+    query: str = typer.Argument(..., help="Search query."),
+    top_k: int = typer.Option(5, "--top-k", min=1, max=20, help="Number of results."),
+) -> None:
+    """Search indexed chunks with the configured embedding provider."""
+    try:
+        settings = load_settings(ctx.obj.get("env_file") if ctx.obj else None)
+        result = search(query, top_k=top_k, settings=settings)
+    except RetrievalNotReady as exc:
+        typer.echo(f"retrieval_not_ready: {exc}", err=True)
+        raise typer.Exit(1) from exc
+    except (ConfigError, EmbeddingError, RetrievalError) as exc:
+        typer.echo(f"retrieval error: {exc}", err=True)
+        raise typer.Exit(1) from exc
+
+    typer.echo(f"query={result.query}")
+    typer.echo(f"top_k={result.top_k}")
+    typer.echo(f"confidence={result.confidence:.4f}")
+    for index, chunk in enumerate(result.chunks, start=1):
+        api_result = to_search_result(chunk)
+        typer.echo(
+            f"{index}. source={api_result.source} "
+            f"heading={api_result.heading} score={api_result.score:.4f}"
+        )
+        typer.echo(api_result.content)
 
 
 def main() -> None:
