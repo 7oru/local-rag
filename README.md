@@ -3,7 +3,8 @@
 `local-rag` is a local-first RAG reference implementation for Field Deployment
 Engineers building enterprise knowledge-base demos and proofs of concept.
 
-这个项目的 MVP 目标是让 FDE 可以在客户现场演示一条可信的企业知识库链路：
+The MVP is meant to let an FDE demonstrate a trustworthy enterprise
+knowledge-base loop on a local machine:
 
 ```text
 Markdown / Obsidian vault
@@ -15,7 +16,7 @@ Markdown / Obsidian vault
   -> citations / no-answer / agent-facing API
 ```
 
-当前代码已经跑通到 retrieval：
+The current implementation is complete through retrieval:
 
 - sample enterprise vault: `samples/acme-vault/`
 - CLI: `rag db init`, `rag embeddings warmup`, `rag ingest`, `rag search`
