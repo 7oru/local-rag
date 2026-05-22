@@ -1,0 +1,30 @@
+- id: support-p1-escalation
+  question: 客户 P1 工单应该如何升级？
+  expected_sources:
+    - policies/Support Escalation Policy.md
+  expected_mode: rag
+- id: atlas-export-limits
+  question: Atlas CRM 支持哪些数据导出限制？
+  expected_sources:
+    - products/Atlas CRM.md
+    - products/Atlas CRM FAQ.md
+  expected_mode: rag
+- id: api-latency-runbook
+  question: API 延迟升高时值班工程师应该怎么处理？
+  expected_sources:
+    - runbooks/API Latency Runbook.md
+  expected_mode: rag
+- id: external-model-restricted-data
+  question: 哪些客户数据不能发给外部模型？
+  expected_sources:
+    - policies/Data Handling Policy.md
+  expected_mode: rag
+- id: sales-competitive-claims
+  question: 和竞品对比时销售应该避免哪些说法？
+  expected_sources:
+    - sales/Competitive Positioning.md
+  expected_mode: rag
+- id: unrelated-cafeteria-menu
+  question: 今天公司食堂午餐菜单是什么？
+  expected_sources: []
+  expected_mode: no_answer
