@@ -147,6 +147,55 @@ export LLM_API_KEY="<provider api key>"
 If the provider expects `/v1`, include it in `LLM_BASE_URL`; local-rag appends only
 `/chat/completions`.
 
+### Kimi / Moonshot Sample RAG Run
+
+This is the concrete command path used to verify the sample vault with Kimi's
+OpenAI-compatible API. The app still reads only generic `LLM_*` variables; the
+shell maps `KIMI_API_KEY` to `LLM_API_KEY` for this run.
+
+```bash
+export LLM_PROVIDER=openai-compatible
+export LLM_BASE_URL=https://api.moonshot.cn/v1
+export LLM_MODEL=moonshot-v1-8k
+if [ -n "${KIMI_API_KEY:-}" ]; then
+  export LLM_API_KEY="$KIMI_API_KEY"
+fi
+
+docker compose up -d postgres
+rag db init
+rag ingest samples/acme-vault
+uvicorn app.main:app --host 127.0.0.1 --port 8000
+```
+
+In another shell:
+
+```bash
+curl -sS http://127.0.0.1:8000/ask \
+  -H "Content-Type: application/json" \
+  -d '{"question":"客户 P1 工单应该怎么升级？请用中文简洁回答。","top_k":5,"fallback":false}'
+```
+
+Example response shape from the live run:
+
+```json
+{
+  "mode": "rag",
+  "confidence": 0.2017,
+  "answer": "客户P1工单应该在15分钟内确认，并分配给escalation owner和on-call engineer，并创建war-room thread，之后每30分钟更新一次客户时间线，直到问题得到缓解。[1]",
+  "citations": [
+    {
+      "source": "policies/Support Escalation Policy.md",
+      "heading": "P1 Escalation",
+      "score": 0.2017
+    }
+  ]
+}
+```
+
+`moonshot-v1-8k` is used here because the MVP LLM wire contract sends
+`temperature=0`. Some Kimi models, such as `kimi-k2.6`, may require a different
+temperature and can reject this MVP request shape.
+
 ### SOCKS Proxy Troubleshooting
 
 Some local proxy or VPN tools export environment variables such as:
