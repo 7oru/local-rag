@@ -283,5 +283,6 @@ pytest -m local_qwen3 tests/test_local_qwen3_threshold.py -s
 
 - [MVP Scope](docs/mvp.md)
 - [MVP Subtasks](docs/mvp-subtasks.md)
+- [FDE Demo Script](docs/demo-script.md)
 - [Manual Live Gate](docs/manual-live-gate.md)
 - [Roadmap to Full Release](docs/roadmap-to-full-release.md)
