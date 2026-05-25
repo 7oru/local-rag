@@ -16,24 +16,25 @@ Markdown / Obsidian vault
   -> citations / no-answer / agent-facing API
 ```
 
-The current implementation is complete through retrieval:
+The MVP now includes the full local RAG loop:
 
 - sample enterprise vault: `samples/acme-vault/`
-- CLI: `rag db init`, `rag embeddings warmup`, `rag ingest`, `rag search`
-- API: `GET /health`, `POST /search`
+- CLI: `rag db init`, `rag embeddings warmup`, `rag ingest`, `rag search`, `rag ask`
+- API: `GET /health`, `POST /search`, `POST /ask`
 - embeddings:
   - default `fake-lexical-v1`: deterministic lexical embedding, no network, good for smoke tests
   - optional `local-qwen3`: `Qwen/Qwen3-Embedding-0.6B`, real local semantic embedding
+- LLMs:
+  - default `fake`: deterministic local answer generation, no network
+  - optional `openai-compatible`: non-streaming `/chat/completions`
 - Postgres schema: `documents`, `chunks`, `embeddings`, `ingest_runs`
 - pgvector stores 1024-dimensional vectors
-
-`/ask`, LLM answer generation, final citations assembly, and OpenAI-compatible live
-gate are still later MVP tasks.
 
 ## Quickstart: Offline Smoke Path
 
 This path uses `fake-lexical-v1`, so it does not download an embedding model and
-does not need an API key.
+does not need an API key. Docker Compose only starts Postgres; the CLI, tests,
+and API run from the local Python virtualenv.
 
 ```bash
 cp .env.sample .env
@@ -47,13 +48,34 @@ rag db init
 rag embeddings warmup
 rag ingest samples/acme-vault
 rag search "客户 P1 工单应该怎么升级？"
+rag ask "客户 P1 工单应该怎么升级？"
 ```
 
-Expected shape:
+CLI commands print JSON by default. The search result should include:
 
-```text
-source=policies/Support Escalation Policy.md
-heading=P1 Escalation
+```json
+{
+  "results": [
+    {
+      "source": "policies/Support Escalation Policy.md",
+      "heading": "P1 Escalation"
+    }
+  ]
+}
+```
+
+The ask result should return `mode="rag"` and citations:
+
+```json
+{
+  "mode": "rag",
+  "citations": [
+    {
+      "source": "policies/Support Escalation Policy.md",
+      "heading": "P1 Escalation"
+    }
+  ]
+}
 ```
 
 The second ingest should skip unchanged documents:
@@ -62,12 +84,7 @@ The second ingest should skip unchanged documents:
 rag ingest samples/acme-vault
 ```
 
-Expected shape:
-
-```text
-documents_skipped=9
-embeddings_written=0
-```
+Expect `documents_skipped=9` and `embeddings_written=0` in the JSON output.
 
 ## Run the API
 
@@ -88,6 +105,45 @@ curl -sS http://127.0.0.1:8000/search \
   -H 'Content-Type: application/json' \
   -d '{"query":"客户 P1 工单应该怎么升级？","top_k":5}'
 ```
+
+Ask:
+
+```bash
+curl -sS http://127.0.0.1:8000/ask \
+  -H 'Content-Type: application/json' \
+  -d '{"question":"客户 P1 工单应该怎么升级？","top_k":5,"fallback":false}'
+```
+
+## Fallback Behavior
+
+`/ask` chooses a mode from the top retrieval confidence:
+
+- `rag`: confidence is at least `RAG_MIN_SIMILARITY`; answer uses local context and citations.
+- `no_answer`: confidence is too low; the local knowledge base is not confident enough.
+- `fallback`: confidence is too low, request has `fallback=true`, and `RAG_FALLBACK_ENABLED=true`.
+
+Fallback answers are explicitly not from the local knowledge base and return no
+citations:
+
+```bash
+rag ask "完全不存在的随机问题 xyz"
+RAG_FALLBACK_ENABLED=true rag ask "完全不存在的随机问题 xyz" --fallback
+```
+
+## OpenAI-compatible LLM
+
+The default `LLM_PROVIDER=fake` is offline. To use a real OpenAI-compatible
+provider, set only the generic variables:
+
+```bash
+export LLM_PROVIDER=openai-compatible
+export LLM_BASE_URL="<provider openai-compatible base url>"
+export LLM_MODEL="<provider model>"
+export LLM_API_KEY="<provider api key>"
+```
+
+If the provider expects `/v1`, include it in `LLM_BASE_URL`; local-rag appends only
+`/chat/completions`.
 
 ## Semantic Demo: local-qwen3
 
@@ -143,6 +199,28 @@ max_no_answer_top_score=0.2727
 margin=0.4011
 ```
 
+This manual gate is not part of default CI.
+
+## Manual Live Gate
+
+After the sample vault is ingested and the API server is running, verify a real
+OpenAI-compatible provider through HTTP `/ask`:
+
+```bash
+uvicorn app.main:app --host 127.0.0.1 --port 8000
+```
+
+In another shell:
+
+```bash
+scripts/manual_live_ask.sh
+```
+
+The script requires `LLM_PROVIDER=openai-compatible`, `LLM_BASE_URL`,
+`LLM_MODEL`, and `LLM_API_KEY`. It prints only `mode`, `answer`, and
+`citations`; it never prints the API key. See
+[Manual Live Gate](docs/manual-live-gate.md).
+
 ## Configuration
 
 Copy `.env.sample` to `.env`. Runtime priority is:
@@ -183,6 +261,12 @@ Default tests do not require a real embedding model or API key:
 pytest
 ```
 
+End-to-end smoke test:
+
+```bash
+pytest tests/test_smoke.py
+```
+
 The test harness uses `TEST_DATABASE_URL` and refuses destructive cleanup unless
 the database name ends with `_test` and differs from `DATABASE_URL`.
 
@@ -199,4 +283,5 @@ pytest -m local_qwen3 tests/test_local_qwen3_threshold.py -s
 
 - [MVP Scope](docs/mvp.md)
 - [MVP Subtasks](docs/mvp-subtasks.md)
+- [Manual Live Gate](docs/manual-live-gate.md)
 - [Roadmap to Full Release](docs/roadmap-to-full-release.md)
