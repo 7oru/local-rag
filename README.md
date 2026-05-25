@@ -1,5 +1,7 @@
 # local-rag
 
+[中文说明](README.zh-CN.md)
+
 `local-rag` is a local-first RAG reference implementation for Field Deployment
 Engineers building enterprise knowledge-base demos and proofs of concept.
 
@@ -144,6 +146,35 @@ export LLM_API_KEY="<provider api key>"
 
 If the provider expects `/v1`, include it in `LLM_BASE_URL`; local-rag appends only
 `/chat/completions`.
+
+### SOCKS Proxy Troubleshooting
+
+Some local proxy or VPN tools export environment variables such as:
+
+```bash
+ALL_PROXY=socks5://127.0.0.1:15235
+```
+
+`httpx` automatically reads these proxy variables. If a SOCKS proxy is present
+but the Python environment does not have SOCKS support installed, a live LLM
+call can fail with:
+
+```text
+Using SOCKS proxy, but the 'socksio' package is not installed
+```
+
+If direct access to the provider works, disable proxy variables for the current
+shell before starting `uvicorn` or running `rag ask`:
+
+```bash
+unset ALL_PROXY HTTPS_PROXY HTTP_PROXY all_proxy https_proxy http_proxy
+```
+
+If you need to route requests through the SOCKS proxy, install SOCKS support:
+
+```bash
+pip install "httpx[socks]"
+```
 
 ## Semantic Demo: local-qwen3
 
