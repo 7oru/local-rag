@@ -3,10 +3,12 @@ from typing import Optional
 
 import typer
 
+from app.ask import answer_question
 from app.config import ConfigError, load_settings
 from app.db import DatabaseError, init_db
 from app.embeddings import EmbeddingError, warmup_embeddings
 from app.ingest import IngestError, ingest_vault
+from app.llm import LLMError
 from app.retrieval import RetrievalError, RetrievalNotReady, search, to_search_result
 
 app = typer.Typer(
@@ -125,6 +127,39 @@ def search_command(
             f"heading={api_result.heading} score={api_result.score:.4f}"
         )
         typer.echo(api_result.content)
+
+
+@app.command("ask")
+def ask_command(
+    ctx: typer.Context,
+    question: str = typer.Argument(..., help="Question to answer."),
+    top_k: int = typer.Option(5, "--top-k", min=1, max=20, help="Number of chunks."),
+    fallback: bool = typer.Option(False, "--fallback", help="Allow general fallback."),
+) -> None:
+    """Answer a question with the configured local RAG pipeline."""
+    try:
+        settings = load_settings(ctx.obj.get("env_file") if ctx.obj else None)
+        response = answer_question(
+            question,
+            top_k=top_k,
+            fallback=fallback,
+            settings=settings,
+        )
+    except RetrievalNotReady as exc:
+        typer.echo(f"retrieval_not_ready: {exc}", err=True)
+        raise typer.Exit(1) from exc
+    except (ConfigError, EmbeddingError, RetrievalError, LLMError) as exc:
+        typer.echo(f"ask error: {exc}", err=True)
+        raise typer.Exit(1) from exc
+
+    typer.echo(f"mode={response.mode}")
+    typer.echo(f"confidence={response.confidence:.4f}")
+    typer.echo(response.answer)
+    for index, citation in enumerate(response.citations, start=1):
+        typer.echo(
+            f"{index}. source={citation.source} "
+            f"heading={citation.heading} score={citation.score:.4f}"
+        )
 
 
 def main() -> None:

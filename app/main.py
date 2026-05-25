@@ -4,13 +4,18 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from app.ask import answer_question
 from app.config import ConfigError, load_settings
 from app.db import inspect_database
+from app.llm import LLMError
 from app.retrieval import RetrievalError, RetrievalNotReady, search, to_search_result
 from app.schemas import (
+    AskRequest,
+    AskResponse,
     ErrorBody,
     ErrorResponse,
     HealthChecks,
@@ -33,7 +38,7 @@ async def validation_exception_handler(
         status_code=422,
         code="invalid_request",
         message="Request validation failed.",
-        details={"errors": exc.errors()},
+        details={"errors": jsonable_encoder(exc.errors())},
     )
 
 
@@ -114,6 +119,36 @@ def health() -> HealthResponse | JSONResponse:
     )
 
 
+@app.post("/ask", response_model=AskResponse)
+def ask_route(request: AskRequest) -> AskResponse | JSONResponse:
+    try:
+        return answer_question(
+            request.question,
+            top_k=request.top_k,
+            fallback=request.fallback,
+        )
+    except RetrievalNotReady as exc:
+        return api_error(
+            status_code=503,
+            code="retrieval_not_ready",
+            message="Retrieval is not ready for the current embedding config.",
+            details={"reason": str(exc)},
+        )
+    except RetrievalError as exc:
+        return api_error(
+            status_code=503,
+            code="retrieval_error",
+            message="Retrieval failed.",
+            details={"reason": str(exc)},
+        )
+    except LLMError as exc:
+        return api_error(
+            status_code=llm_error_status(exc.code),
+            code=exc.code,
+            message=exc.message,
+        )
+
+
 @app.post("/search", response_model=SearchResponse)
 def search_route(request: SearchRequest) -> SearchResponse | JSONResponse:
     try:
@@ -156,3 +191,13 @@ def api_error(
         )
     )
     return JSONResponse(status_code=status_code, content=response.model_dump())
+
+
+def llm_error_status(code: str) -> int:
+    return {
+        "llm_timeout": 504,
+        "llm_auth_failed": 502,
+        "llm_rate_limited": 503,
+        "llm_config_missing": 503,
+        "llm_upstream_error": 502,
+    }.get(code, 502)
