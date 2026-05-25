@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -52,10 +53,11 @@ def test_python_module_fake_embed_does_not_require_network(
 
 def test_cli_fake_warmup(run_cli) -> None:
     result = run_cli("embeddings", "warmup", check=True)
+    body = json.loads(result.stdout)
 
-    assert "provider=fake" in result.stdout
-    assert "model=fake-lexical-v1" in result.stdout
-    assert "cached=true" in result.stdout
+    assert body["provider"] == "fake"
+    assert body["model"] == "fake-lexical-v1"
+    assert body["cached"] is True
 
 
 def test_local_qwen3_embed_requires_existing_cache(tmp_path) -> None:

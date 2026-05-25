@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from fastapi.testclient import TestClient
 
 from app.config import load_settings
@@ -68,6 +70,7 @@ def test_search_cli_uses_shared_retrieval_service(run_cli, clean_test_db: None) 
     ingest_vault("samples/acme-vault", settings=settings)
 
     result = run_cli("search", "客户 P1 工单应该怎么升级？", check=True)
+    body = json.loads(result.stdout)
 
-    assert "confidence=" in result.stdout
-    assert "source=policies/Support Escalation Policy.md" in result.stdout
+    assert body["confidence"] == body["results"][0]["score"]
+    assert body["results"][0]["source"] == "policies/Support Escalation Policy.md"

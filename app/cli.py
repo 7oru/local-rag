@@ -1,5 +1,7 @@
+import json
+from dataclasses import asdict
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 import typer
 
@@ -43,11 +45,31 @@ def config_command(ctx: typer.Context) -> None:
     try:
         settings = load_settings(ctx.obj.get("env_file") if ctx.obj else None)
     except ConfigError as exc:
-        typer.echo(f"configuration error: {exc}", err=True)
+        emit_error("configuration_error", str(exc))
         raise typer.Exit(1) from exc
 
-    for line in settings.summary_lines():
-        typer.echo(line)
+    emit_json(
+        {
+            "repo_root": str(settings.repo_root),
+            "env_file": str(settings.env_file),
+            "database_url": settings.database_url,
+            "test_database_url": settings.test_database_url,
+            "vault_path": settings.vault_path,
+            "embedding_provider": settings.embedding_provider,
+            "embedding_model": settings.embedding_model,
+            "embedding_dim": settings.embedding_dim,
+            "embedding_cache_dir": settings.embedding_cache_dir,
+            "llm_provider": settings.llm_provider,
+            "llm_model": settings.llm_model,
+            "llm_base_url_set": bool(settings.llm_base_url),
+            "llm_api_key_present": settings.llm_api_key_present,
+            "llm_timeout_seconds": settings.llm_timeout_seconds,
+            "rag_top_k": settings.rag_top_k,
+            "rag_min_similarity": settings.rag_min_similarity,
+            "rag_context_token_budget": settings.rag_context_token_budget,
+            "rag_fallback_enabled": settings.rag_fallback_enabled,
+        }
+    )
 
 
 @db_app.command("init")
@@ -57,10 +79,10 @@ def db_init_command(ctx: typer.Context) -> None:
         settings = load_settings(ctx.obj.get("env_file") if ctx.obj else None)
         init_db(settings)
     except (ConfigError, DatabaseError) as exc:
-        typer.echo(f"database error: {exc}", err=True)
+        emit_error("database_error", str(exc))
         raise typer.Exit(1) from exc
 
-    typer.echo("database schema initialized")
+    emit_json({"status": "ok", "message": "database schema initialized"})
 
 
 @embeddings_app.command("warmup")
@@ -70,11 +92,10 @@ def embeddings_warmup_command(ctx: typer.Context) -> None:
         settings = load_settings(ctx.obj.get("env_file") if ctx.obj else None)
         result = warmup_embeddings(settings)
     except (ConfigError, EmbeddingError) as exc:
-        typer.echo(f"embedding error: {exc}", err=True)
+        emit_error("embedding_error", str(exc))
         raise typer.Exit(1) from exc
 
-    for line in result.summary_lines():
-        typer.echo(line)
+    emit_json(asdict(result))
 
 
 @app.command("ingest")
@@ -93,11 +114,10 @@ def ingest_command(
         settings = load_settings(ctx.obj.get("env_file") if ctx.obj else None)
         result = ingest_vault(vault_path, settings=settings)
     except (ConfigError, EmbeddingError, IngestError) as exc:
-        typer.echo(f"ingest error: {exc}", err=True)
+        emit_error("ingest_error", str(exc))
         raise typer.Exit(1) from exc
 
-    for line in result.summary_lines():
-        typer.echo(line)
+    emit_json(asdict(result))
 
 
 @app.command("search")
@@ -111,22 +131,20 @@ def search_command(
         settings = load_settings(ctx.obj.get("env_file") if ctx.obj else None)
         result = search(query, top_k=top_k, settings=settings)
     except RetrievalNotReady as exc:
-        typer.echo(f"retrieval_not_ready: {exc}", err=True)
+        emit_error("retrieval_not_ready", str(exc))
         raise typer.Exit(1) from exc
     except (ConfigError, EmbeddingError, RetrievalError) as exc:
-        typer.echo(f"retrieval error: {exc}", err=True)
+        emit_error("retrieval_error", str(exc))
         raise typer.Exit(1) from exc
 
-    typer.echo(f"query={result.query}")
-    typer.echo(f"top_k={result.top_k}")
-    typer.echo(f"confidence={result.confidence:.4f}")
-    for index, chunk in enumerate(result.chunks, start=1):
-        api_result = to_search_result(chunk)
-        typer.echo(
-            f"{index}. source={api_result.source} "
-            f"heading={api_result.heading} score={api_result.score:.4f}"
-        )
-        typer.echo(api_result.content)
+    emit_json(
+        {
+            "query": result.query,
+            "top_k": result.top_k,
+            "confidence": result.confidence,
+            "results": [to_search_result(chunk).model_dump() for chunk in result.chunks],
+        }
+    )
 
 
 @app.command("ask")
@@ -146,20 +164,31 @@ def ask_command(
             settings=settings,
         )
     except RetrievalNotReady as exc:
-        typer.echo(f"retrieval_not_ready: {exc}", err=True)
+        emit_error("retrieval_not_ready", str(exc))
         raise typer.Exit(1) from exc
-    except (ConfigError, EmbeddingError, RetrievalError, LLMError) as exc:
-        typer.echo(f"ask error: {exc}", err=True)
+    except LLMError as exc:
+        emit_error(exc.code, exc.message)
+        raise typer.Exit(1) from exc
+    except (ConfigError, EmbeddingError, RetrievalError) as exc:
+        emit_error("ask_error", str(exc))
         raise typer.Exit(1) from exc
 
-    typer.echo(f"mode={response.mode}")
-    typer.echo(f"confidence={response.confidence:.4f}")
-    typer.echo(response.answer)
-    for index, citation in enumerate(response.citations, start=1):
-        typer.echo(
-            f"{index}. source={citation.source} "
-            f"heading={citation.heading} score={citation.score:.4f}"
-        )
+    emit_json(response.model_dump())
+
+
+def emit_json(payload: dict[str, Any]) -> None:
+    typer.echo(json.dumps(payload, ensure_ascii=False))
+
+
+def emit_error(code: str, message: str, details: dict[str, Any] | None = None) -> None:
+    emit = {
+        "error": {
+            "code": code,
+            "message": message,
+            "details": details or {},
+        }
+    }
+    typer.echo(json.dumps(emit, ensure_ascii=False), err=True)
 
 
 def main() -> None:
