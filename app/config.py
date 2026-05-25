@@ -154,22 +154,6 @@ def _build_settings(repo_root: Path, env_file: Path) -> Settings:
     llm_base_url = _optional_string("LLM_BASE_URL")
     llm_api_key = _optional_string("LLM_API_KEY")
     llm_model = _string("LLM_MODEL")
-    if llm_provider == "openai-compatible":
-        missing = [
-            name
-            for name, value in (
-                ("LLM_BASE_URL", llm_base_url),
-                ("LLM_API_KEY", llm_api_key),
-                ("LLM_MODEL", llm_model),
-            )
-            if not value
-        ]
-        if missing:
-            raise ConfigError(
-                "LLM_PROVIDER=openai-compatible requires "
-                + ", ".join(missing)
-                + "."
-            )
 
     rag_top_k = _int("RAG_TOP_K")
     if not 1 <= rag_top_k <= 20:
