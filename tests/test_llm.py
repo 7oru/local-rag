@@ -43,6 +43,16 @@ def test_fake_llm_is_deterministic_and_uses_context_without_network() -> None:
     assert "[1]" in first.answer
     assert "policy.md" in first.answer
 
+    streamed = list(
+        client.stream_rag(
+            question="What is the policy?",
+            context="[1] source: policy.md\nheading: Policy\nscore: 0.8000\ncontent:\nUse P1.",
+            citations=citations,
+        )
+    )
+    assert "".join(streamed) == first.answer
+    assert len(streamed) > 1
+
 
 @pytest.mark.parametrize("field", ["llm_base_url", "llm_api_key", "llm_model"])
 def test_openai_compatible_missing_config_maps_to_llm_config_missing(field: str) -> None:
@@ -103,6 +113,50 @@ def test_openai_compatible_sends_non_streaming_chat_request_and_reads_content() 
     assert "Context:" in json_body["messages"][1]["content"]
 
 
+def test_openai_compatible_sends_streaming_chat_request_and_reads_chunks() -> None:
+    captured: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["url"] = str(request.url)
+        captured["authorization"] = request.headers["Authorization"]
+        captured["content_type"] = request.headers["Content-Type"]
+        captured["body"] = request.read()
+        return httpx.Response(
+            200,
+            content=(
+                b'data: {"choices":[{"delta":{"role":"assistant"}}]}\n\n'
+                b'data: {"choices":[{"delta":{"content":"hel"}}]}\n\n'
+                b'data: {"choices":[{"delta":{"content":"lo"}}]}\n\n'
+                b"data: [DONE]\n\n"
+            ),
+        )
+
+    client = OpenAICompatibleLLMClient(
+        settings=openai_settings(),
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    chunks = list(
+        client.stream_rag(
+            question="Question?",
+            context="[1] source: source.md\nheading: H\nscore: 0.8000\ncontent:\nAnswer.",
+            citations=[ContextCitation(source="source.md", heading="H", score=0.8)],
+        )
+    )
+
+    body = httpx.Request("POST", "https://example.invalid", content=captured["body"]).read()
+    json_body = httpx.Response(200, content=body).json()
+    assert chunks == ["hel", "lo"]
+    assert captured["url"] == "https://llm.example/v1/chat/completions"
+    assert captured["authorization"] == "Bearer secret-token"
+    assert captured["content_type"] == "application/json"
+    assert json_body["model"] == "demo-model"
+    assert json_body["temperature"] == 0
+    assert json_body["stream"] is True
+    assert json_body["messages"][0] == {"role": "system", "content": RAG_SYSTEM_PROMPT}
+    assert "Context:" in json_body["messages"][1]["content"]
+
+
 @pytest.mark.parametrize(
     ("exception", "code"),
     [
@@ -149,6 +203,29 @@ def test_openai_compatible_maps_status_codes(status_code: int, code: str) -> Non
 
 
 @pytest.mark.parametrize(
+    ("status_code", "code"),
+    [
+        (401, "llm_auth_failed"),
+        (403, "llm_auth_failed"),
+        (429, "llm_rate_limited"),
+        (500, "llm_upstream_error"),
+    ],
+)
+def test_openai_compatible_stream_maps_status_codes(status_code: int, code: str) -> None:
+    client = OpenAICompatibleLLMClient(
+        settings=openai_settings(),
+        http_client=httpx.Client(
+            transport=httpx.MockTransport(lambda request: httpx.Response(status_code, json={}))
+        ),
+    )
+
+    with pytest.raises(LLMError) as exc_info:
+        list(client.stream_fallback(question="Question?"))
+
+    assert exc_info.value.code == code
+
+
+@pytest.mark.parametrize(
     "payload",
     [
         {},
@@ -167,6 +244,29 @@ def test_openai_compatible_maps_malformed_response(payload: dict[str, object]) -
 
     with pytest.raises(LLMError) as exc_info:
         client.answer_fallback(question="Question?")
+
+    assert exc_info.value.code == "llm_upstream_error"
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        b"data: not-json\n\n",
+        b"data: {}\n\n",
+        b"data: [DONE]\n\n",
+        b'data: {"choices":[{"delta":{"content":"partial"}}]}\n\n',
+    ],
+)
+def test_openai_compatible_maps_malformed_stream(content: bytes) -> None:
+    client = OpenAICompatibleLLMClient(
+        settings=openai_settings(),
+        http_client=httpx.Client(
+            transport=httpx.MockTransport(lambda request: httpx.Response(200, content=content))
+        ),
+    )
+
+    with pytest.raises(LLMError) as exc_info:
+        list(client.stream_fallback(question="Question?"))
 
     assert exc_info.value.code == "llm_upstream_error"
 
