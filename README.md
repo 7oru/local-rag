@@ -22,13 +22,13 @@ The MVP now includes the full local RAG loop:
 
 - sample enterprise vault: `samples/acme-vault/`
 - CLI: `rag db init`, `rag embeddings warmup`, `rag ingest`, `rag search`, `rag ask`
-- API: `GET /health`, `POST /search`, `POST /ask`
+- API: `GET /health`, `POST /search`, `POST /ask`, `POST /ask/stream`
 - embeddings:
   - default `fake-lexical-v1`: deterministic lexical embedding, no network, good for smoke tests
   - optional `local-qwen3`: `Qwen/Qwen3-Embedding-0.6B`, real local semantic embedding
 - LLMs:
   - default `fake`: deterministic local answer generation, no network
-  - optional `openai-compatible`: non-streaming `/chat/completions`
+  - optional `openai-compatible`: `/chat/completions` with non-streaming and SSE streaming paths
 - Postgres schema: `documents`, `chunks`, `embeddings`, `ingest_runs`
 - pgvector stores 1024-dimensional vectors
 
@@ -112,6 +112,14 @@ Ask:
 
 ```bash
 curl -sS http://127.0.0.1:8000/ask \
+  -H 'Content-Type: application/json' \
+  -d '{"question":"客户 P1 工单应该怎么升级？","top_k":5,"fallback":false}'
+```
+
+Ask with SSE streaming:
+
+```bash
+curl -N http://127.0.0.1:8000/ask/stream \
   -H 'Content-Type: application/json' \
   -d '{"question":"客户 P1 工单应该怎么升级？","top_k":5,"fallback":false}'
 ```

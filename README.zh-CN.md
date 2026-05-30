@@ -21,13 +21,13 @@ Markdown / Obsidian vault
 
 - 示例企业知识库：`samples/acme-vault/`
 - CLI：`rag db init`、`rag embeddings warmup`、`rag ingest`、`rag search`、`rag ask`
-- API：`GET /health`、`POST /search`、`POST /ask`
+- API：`GET /health`、`POST /search`、`POST /ask`、`POST /ask/stream`
 - embeddings：
   - 默认 `fake-lexical-v1`：确定性的 lexical embedding，无网络依赖，适合 smoke test
   - 可选 `local-qwen3`：`Qwen/Qwen3-Embedding-0.6B`，真实本地语义 embedding
 - LLM：
   - 默认 `fake`：确定性的本地回答生成，无网络依赖
-  - 可选 `openai-compatible`：非 streaming `/chat/completions`
+  - 可选 `openai-compatible`：`/chat/completions`，支持非 streaming 和 SSE streaming 路径
 - Postgres schema：`documents`、`chunks`、`embeddings`、`ingest_runs`
 - pgvector 存储 1024 维向量
 
@@ -110,6 +110,14 @@ Ask：
 
 ```bash
 curl -sS http://127.0.0.1:8000/ask \
+  -H 'Content-Type: application/json' \
+  -d '{"question":"客户 P1 工单应该怎么升级？","top_k":5,"fallback":false}'
+```
+
+SSE streaming Ask：
+
+```bash
+curl -N http://127.0.0.1:8000/ask/stream \
   -H 'Content-Type: application/json' \
   -d '{"question":"客户 P1 工单应该怎么升级？","top_k":5,"fallback":false}'
 ```

@@ -570,11 +570,11 @@ RAG_FALLBACK_ENABLED=false
 
 OpenAI-compatible wire contract：
 
-- 固定使用 non-streaming chat completions，MVP 不实现 streaming。
+- `/ask` 使用 non-streaming chat completions；`/ask/stream` 使用 SSE streaming chat completions。
 - endpoint 为 `LLM_BASE_URL.rstrip("/") + "/chat/completions"`；如果 provider 需要 `/v1`，它必须已经包含在 `LLM_BASE_URL` 中。
 - headers 包含 `Authorization: Bearer {LLM_API_KEY}` 和 `Content-Type: application/json`，日志和异常不得打印 token 原文。
-- request body 至少包含 `model`、`messages`、`temperature: 0`、`stream: false`；`messages` 使用 system/user 两段 prompt。
-- response 读取 `choices[0].message.content`；缺失、非字符串或空白内容映射为 `llm_upstream_error`。
+- non-streaming request body 至少包含 `model`、`messages`、`temperature: 0`、`stream: false`；streaming request 使用同样字段但 `stream: true`。
+- non-streaming response 读取 `choices[0].message.content`；streaming response 读取标准 `data: {...}` chunks 中的 `choices[0].delta.content`，遇到 `data: [DONE]` 结束。
 - timeout 映射为 `llm_timeout`；HTTP `401/403` 映射为 `llm_auth_failed`；HTTP `429` 映射为 `llm_rate_limited`；其他 HTTP/network/malformed response 映射为 `llm_upstream_error`。
 
 manual live 验证时，必须先让本地 venv 进程读取最新 `.env`：

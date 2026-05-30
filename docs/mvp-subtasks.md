@@ -1181,10 +1181,10 @@ pytest tests/test_context.py
 
 OpenAI-compatible wire contract：
 
-- 请求固定为 non-streaming chat completions；MVP 不实现 streaming。
+- `/ask` 请求使用 non-streaming chat completions；`/ask/stream` 请求使用 SSE streaming chat completions。
 - endpoint 由 `LLM_BASE_URL.rstrip("/") + "/chat/completions"` 得到；如果 provider 需要 `/v1`，它必须已经包含在 `LLM_BASE_URL` 中，代码不得自动猜测或追加 `/v1`。
 - HTTP headers 固定包含 `Authorization: Bearer {LLM_API_KEY}` 和 `Content-Type: application/json`；日志、异常和测试快照不得打印 bearer token 原文。
-- request body 至少包含：
+- non-streaming request body 至少包含：
 
 ```json
 {
@@ -1198,7 +1198,8 @@ OpenAI-compatible wire contract：
 }
 ```
 
-- response 读取路径固定为 `choices[0].message.content`；缺失、非字符串或空白内容都映射为 `llm_upstream_error`。
+- streaming request 使用同样字段但 `stream: true`；streaming response 读取标准 `data: {...}` chunks 中的 `choices[0].delta.content`，遇到 `data: [DONE]` 结束。
+- non-streaming response 读取路径固定为 `choices[0].message.content`；缺失、非字符串或空白内容都映射为 `llm_upstream_error`。
 - timeout 使用 `LLM_TIMEOUT_SECONDS` 传入 HTTP client。
 - upstream error mapping：timeout -> `llm_timeout`；HTTP `401`/`403` -> `llm_auth_failed`；HTTP `429` -> `llm_rate_limited`；其他 HTTP `4xx/5xx`、网络错误或 malformed response -> `llm_upstream_error`。
 
@@ -1216,7 +1217,7 @@ pytest tests/test_llm.py
 - `openai-compatible` 缺少 `LLM_BASE_URL`、`LLM_API_KEY` 或 `LLM_MODEL` 时返回 `llm_config_missing`。
 - 日志、异常和配置摘要不包含 API key 原文，只能显示 key 是否存在。
 - timeout 配置会传入 HTTP client，并能通过 fake/mock client 断言。
-- mock HTTP client 断言 non-streaming request body、Authorization header、messages 格式和 `choices[0].message.content` 读取路径。
+- mock HTTP client 断言 non-streaming 和 streaming request body、Authorization header、messages 格式、`choices[0].message.content` 读取路径和 `choices[0].delta.content` chunk 读取路径。
 - mock HTTP client 覆盖 timeout、401/403、429、5xx 和 malformed response 的错误映射。
 - RAG prompt 只允许根据 context 回答；fallback prompt 明确说明不是知识库答案。
 
