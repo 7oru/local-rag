@@ -5,10 +5,10 @@ from typing import Any
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.encoders import jsonable_encoder
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.ask import answer_question
+from app.ask import answer_question, stream_answer_question
 from app.config import ConfigError, load_settings
 from app.db import inspect_database
 from app.llm import LLMError
@@ -147,6 +147,42 @@ def ask_route(request: AskRequest) -> AskResponse | JSONResponse:
             code=exc.code,
             message=exc.message,
         )
+
+
+@app.post("/ask/stream", response_model=None)
+def ask_stream_route(request: AskRequest) -> StreamingResponse | JSONResponse:
+    try:
+        events = stream_answer_question(
+            request.question,
+            top_k=request.top_k,
+            fallback=request.fallback,
+        )
+    except RetrievalNotReady as exc:
+        return api_error(
+            status_code=503,
+            code="retrieval_not_ready",
+            message="Retrieval is not ready for the current embedding config.",
+            details={"reason": str(exc)},
+        )
+    except RetrievalError as exc:
+        return api_error(
+            status_code=503,
+            code="retrieval_error",
+            message="Retrieval failed.",
+            details={"reason": str(exc)},
+        )
+    except LLMError as exc:
+        return api_error(
+            status_code=llm_error_status(exc.code),
+            code=exc.code,
+            message=exc.message,
+        )
+
+    return StreamingResponse(
+        events,
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache"},
+    )
 
 
 @app.post("/search", response_model=SearchResponse)
